@@ -1,1 +1,1 @@
-## Data availability
+## GEDI Data availability
