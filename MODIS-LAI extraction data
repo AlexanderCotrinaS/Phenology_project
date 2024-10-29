@@ -1,0 +1,70 @@
+// Load the FeatureCollection of forest areas (Broadleaved Forests)
+var areas = ee.FeatureCollection("users/alexandercotrina/GEDI/Broadleaved_sites_border");
+////users/alexandercotrina/GEDI/Broadleaved_sites_border (neadleaved forest)
+
+// Filtering sites by ID (each ID is a code of Site)
+var filteredAreas = areas.filter(ee.Filter.or(
+  ee.Filter.eq('id', 2),
+  ee.Filter.eq('id', 3)
+));
+
+// Date for extraction
+var startDate = ee.Date('2019-01-01');
+var endDate = ee.Date('2023-04-01');
+
+// MODIS LAI collection and select the 'Lai_500m'
+var modisLAI = ee.ImageCollection("MODIS/061/MOD15A2H")
+  .filterDate(startDate, endDate)
+  .select('Lai_500m');
+
+// Clip 
+var firstImage = ee.Image(modisLAI.first());
+var clippedImage = firstImage.clip(filteredAreas);
+
+// Function to scale LAI values to their true scale (0.1 factor)
+function scaleLAI(image) {
+  return image.multiply(0.1).copyProperties(image, ["system:time_start"]);
+}
+
+// Scaling function to each image in the collection
+modisLAI = modisLAI.map(scaleLAI);
+
+// Function to calculate mean LAI for each area and each image in the collection
+function calcLAIForArea(feature) {
+  var laiTimeSeries = modisLAI.map(function(image) {
+    var meanLAI = image.reduceRegion({
+      reducer: ee.Reducer.mean(),
+      geometry: feature.geometry(),
+      scale: 500 // Spatial resolution for MODIS LAI
+    }).get('Lai_500m');
+    
+    // Create a new feature with average LAI and timestamp for each image
+    return ee.Feature(null, {
+      'id': feature.get('id'),
+      'mean_lai': meanLAI
+    }).set('system:time_start', image.get('system:time_start'));
+  });
+  return laiTimeSeries;
+}
+
+// Apply LAI calculation function to each area and flatten the results
+var allTimeSeriesByArea = filteredAreas.map(function(area) {
+  return calcLAIForArea(area);
+}).flatten();
+
+// Generate a time-series chart for LAI by area
+var chart = ui.Chart.feature.groups({
+  features: allTimeSeriesByArea,
+  xProperty: 'system:time_start',
+  yProperty: 'mean_lai',
+  seriesProperty: 'id'
+}).setChartType('LineChart').setOptions({
+  title: 'Average LAI by Area',
+  hAxis: {title: 'Date'},
+  vAxis: {title: 'LAI'},
+  lineWidth: 1,
+  pointSize: 2
+});
+
+// Display the chart in the console and download in CSV format
+print(chart);
