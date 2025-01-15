@@ -17,7 +17,17 @@ var modisLAI = ee.ImageCollection("MODIS/061/MOD15A2H")
   .filterDate(startDate, endDate)
   .select('Lai_500m');
 
-// Clip 
+// Function to filter LAI images by high-quality pixels using QC flags ('FparLai_QC')
+function filterByQuality(image) {
+  var qc = image.select('FparLai_QC');
+  var highQualityMask = qc.bitwiseAnd(3).eq(0); // Keep only high-quality pixels
+  return image.updateMask(highQualityMask);
+}
+
+// Apply the quality filter to the MODIS LAI collection
+modisLAI = modisLAI.map(filterByQuality);
+
+// Clip the first image to the filtered areas
 var firstImage = ee.Image(modisLAI.first());
 var clippedImage = firstImage.clip(filteredAreas);
 
